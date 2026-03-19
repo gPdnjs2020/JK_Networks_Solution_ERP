@@ -1,42 +1,56 @@
 import { useEffect, useState } from "react";
 import { Bar } from "react-chartjs-2";
 import "chart.js/auto";
-import { calcVAT } from "../utils/calcVAT";
+
+const API = "http://localhost:5000";
 
 export default function Dashboard() {
-  const [sales, setSales] = useState(0);       // 총매출
-  const [supply, setSupply] = useState(0);     // 공급가
-  const [vat, setVat] = useState(0);           // 부가세
+  const [sales, setSales] = useState(0);
+  const [supply, setSupply] = useState(0);
+  const [vat, setVat] = useState(0);
   const [stockValue, setStockValue] = useState(0);
 
   useEffect(() => {
-    const totalSales = 320000;
-
-    // 👉 VAT 계산
-    const result = calcVAT(totalSales);
-
-    setSales(result.total);
-    setSupply(result.supply);
-    setVat(result.vat);
-
-    setStockValue(1500000);
+    loadData();
   }, []);
 
+  const loadData = async () => {
+    // 전표 가져오기
+    const vRes = await fetch(`${API}/vouchers`);
+    const vouchers = await vRes.json();
+
+    let total = 0;
+    let s = 0;
+    let v = 0;
+
+    vouchers.forEach((x) => {
+      total += x.total;
+      s += x.supply;
+      v += x.vat;
+    });
+
+    setSales(total);
+    setSupply(s);
+    setVat(v);
+
+    // 상품 가져오기
+    const pRes = await fetch(`${API}/products`);
+    const products = await pRes.json();
+
+    let stockSum = 0;
+    products.forEach((p) => {
+      stockSum += p.price * p.stock;
+    });
+
+    setStockValue(stockSum);
+  };
+
   const chartData = {
-    labels: ["1월", "2월", "3월"],
+    labels: ["총매출"],
     datasets: [
-      {
-        label: "총 매출",
-        data: [100000, 200000, 320000],
-      },
-      {
-        label: "공급가",
-        data: [90000, 180000, 290000],
-      },
-      {
-        label: "부가세",
-        data: [10000, 20000, 30000],
-      },
+      { label: "총액", data: [sales] },
+      { label: "공급가", data: [supply] },
+      { label: "VAT", data: [vat] },
     ],
   };
 
@@ -44,34 +58,26 @@ export default function Dashboard() {
     <div style={{ padding: "20px" }}>
       <h1>📊 ERP 대시보드</h1>
 
-      {/* KPI 카드 */}
       <div style={{ display: "flex", gap: "20px", marginBottom: "20px" }}>
-        <div style={cardStyle}>
-          <h3>총 매출</h3>
-          <p>{sales.toLocaleString()} 원</p>
-        </div>
-
-        <div style={cardStyle}>
-          <h3>공급가</h3>
-          <p>{supply.toLocaleString()} 원</p>
-        </div>
-
-        <div style={cardStyle}>
-          <h3>부가세</h3>
-          <p>{vat.toLocaleString()} 원</p>
-        </div>
-
-        <div style={cardStyle}>
-          <h3>재고 자산</h3>
-          <p>{stockValue.toLocaleString()} 원</p>
-        </div>
+        <Card title="총 매출" value={sales} />
+        <Card title="공급가" value={supply} />
+        <Card title="부가세" value={vat} />
+        <Card title="재고 자산" value={stockValue} />
       </div>
 
-      {/* 그래프 */}
       <div style={cardStyle}>
-        <h3>월별 매출 분석</h3>
+        <h3>매출 요약</h3>
         <Bar data={chartData} />
       </div>
+    </div>
+  );
+}
+
+function Card({ title, value }) {
+  return (
+    <div style={cardStyle}>
+      <h3>{title}</h3>
+      <p>{value.toLocaleString()} 원</p>
     </div>
   );
 }

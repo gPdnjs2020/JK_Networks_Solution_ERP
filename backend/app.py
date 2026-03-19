@@ -53,7 +53,7 @@ def init():
 
     return "DB Initialized"
 
-    @app.route("/products", methods=["GET"])
+@app.route("/products", methods=["GET"])
 def get_products():
     con = get_db()
     cur = con.cursor()
@@ -90,7 +90,7 @@ def add_product():
 
     return "OK"
 
-    @app.route("/partners", methods=["GET"])
+@app.route("/partners", methods=["GET"])
 def get_partners():
     con = get_db()
     cur = con.cursor()
@@ -126,7 +126,7 @@ def add_partner():
 
     return "OK"
 
-    @app.route("/transaction", methods=["POST"])
+@app.route("/transaction", methods=["POST"])
 def transaction():
     data = request.json
 
@@ -176,7 +176,7 @@ def transaction():
 
     return "OK"
 
-    @app.route("/vouchers", methods=["GET"])
+@app.route("/vouchers", methods=["GET"])
 def get_vouchers():
     con = get_db()
     cur = con.cursor()
