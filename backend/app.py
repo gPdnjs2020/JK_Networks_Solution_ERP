@@ -198,3 +198,5 @@ def get_vouchers():
         })
 
     return jsonify(result)
+
+app.run()

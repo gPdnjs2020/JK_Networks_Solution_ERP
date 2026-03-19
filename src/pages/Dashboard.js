@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Bar } from "react-chartjs-2";
 import "chart.js/auto";
 
-const API = "http://localhost:5000";
+const API = "http://127.0.0.1:5000";
 
 export default function Dashboard() {
   const [sales, setSales] = useState(0);

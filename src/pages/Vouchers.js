@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-const API = "http://localhost:5000";
+const API = "http://127.0.0.1:5000";
 
 export default function Vouchers() {
   const [vouchers, setVouchers] = useState([]);
