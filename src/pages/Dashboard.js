@@ -1,14 +1,24 @@
 import { useEffect, useState } from "react";
 import { Bar } from "react-chartjs-2";
 import "chart.js/auto";
+import { calcVAT } from "../utils/calcVAT";
 
 export default function Dashboard() {
-  const [sales, setSales] = useState(0);
+  const [sales, setSales] = useState(0);       // 총매출
+  const [supply, setSupply] = useState(0);     // 공급가
+  const [vat, setVat] = useState(0);           // 부가세
   const [stockValue, setStockValue] = useState(0);
 
-  // 임시 데이터 (나중에 API 연결)
   useEffect(() => {
-    setSales(320000);
+    const totalSales = 320000;
+
+    // 👉 VAT 계산
+    const result = calcVAT(totalSales);
+
+    setSales(result.total);
+    setSupply(result.supply);
+    setVat(result.vat);
+
     setStockValue(1500000);
   }, []);
 
@@ -16,8 +26,16 @@ export default function Dashboard() {
     labels: ["1월", "2월", "3월"],
     datasets: [
       {
-        label: "매출",
+        label: "총 매출",
         data: [100000, 200000, 320000],
+      },
+      {
+        label: "공급가",
+        data: [90000, 180000, 290000],
+      },
+      {
+        label: "부가세",
+        data: [10000, 20000, 30000],
       },
     ],
   };
@@ -29,8 +47,18 @@ export default function Dashboard() {
       {/* KPI 카드 */}
       <div style={{ display: "flex", gap: "20px", marginBottom: "20px" }}>
         <div style={cardStyle}>
-          <h3>오늘 매출</h3>
+          <h3>총 매출</h3>
           <p>{sales.toLocaleString()} 원</p>
+        </div>
+
+        <div style={cardStyle}>
+          <h3>공급가</h3>
+          <p>{supply.toLocaleString()} 원</p>
+        </div>
+
+        <div style={cardStyle}>
+          <h3>부가세</h3>
+          <p>{vat.toLocaleString()} 원</p>
         </div>
 
         <div style={cardStyle}>
@@ -41,7 +69,7 @@ export default function Dashboard() {
 
       {/* 그래프 */}
       <div style={cardStyle}>
-        <h3>월별 매출</h3>
+        <h3>월별 매출 분석</h3>
         <Bar data={chartData} />
       </div>
     </div>

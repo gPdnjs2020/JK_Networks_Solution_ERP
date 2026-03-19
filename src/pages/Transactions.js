@@ -1,15 +1,16 @@
 import { useEffect, useState } from "react";
+import { calcVAT } from "../utils/calcVAT";
 
 export default function Transactions() {
   const [products, setProducts] = useState([]);
   const [partners, setPartners] = useState([]);
+  const [vouchers, setVouchers] = useState([]);
 
   const [productId, setProductId] = useState("");
   const [partnerId, setPartnerId] = useState("");
   const [qty, setQty] = useState(1);
   const [type, setType] = useState("OUT");
 
-  // 초기 데이터 (나중에 API로 교체)
   useEffect(() => {
     setProducts([
       { id: 1, name: "토너 A", stock: 10, price: 11000 },
@@ -32,7 +33,10 @@ export default function Transactions() {
 
     const total = selectedProduct.price * qty;
 
-    // 상품 업데이트
+    // 👉 VAT 계산
+    const { supply, vat } = calcVAT(total);
+
+    // 상품 재고 업데이트
     const updatedProducts = products.map(p => {
       if (p.id === selectedProduct.id) {
         return {
@@ -45,7 +49,7 @@ export default function Transactions() {
       return p;
     });
 
-    // 거래처 업데이트
+    // 거래처 잔액 업데이트
     const updatedPartners = partners.map(p => {
       if (p.id === selectedPartner.id) {
         return {
@@ -61,6 +65,22 @@ export default function Transactions() {
     setProducts(updatedProducts);
     setPartners(updatedPartners);
 
+    // 👉 전표 생성 (핵심)
+    if (type === "OUT") {
+      const newVoucher = {
+        id: Date.now(),
+        partner: selectedPartner.name,
+        product: selectedProduct.name,
+        qty,
+        supply,
+        vat,
+        total,
+        date: new Date().toISOString().slice(0, 10),
+      };
+
+      setVouchers([...vouchers, newVoucher]);
+    }
+
     alert("처리 완료!");
   };
 
@@ -71,12 +91,7 @@ export default function Transactions() {
       <div style={cardStyle}>
         <h3>입출고 처리</h3>
 
-        {/* 상품 선택 */}
-        <select
-          value={productId}
-          onChange={(e) => setProductId(e.target.value)}
-          style={input}
-        >
+        <select value={productId} onChange={(e) => setProductId(e.target.value)} style={input}>
           <option value="">상품 선택</option>
           {products.map(p => (
             <option key={p.id} value={p.id}>
@@ -85,12 +100,7 @@ export default function Transactions() {
           ))}
         </select>
 
-        {/* 거래처 선택 */}
-        <select
-          value={partnerId}
-          onChange={(e) => setPartnerId(e.target.value)}
-          style={input}
-        >
+        <select value={partnerId} onChange={(e) => setPartnerId(e.target.value)} style={input}>
           <option value="">거래처 선택</option>
           {partners.map(p => (
             <option key={p.id} value={p.id}>
@@ -99,7 +109,6 @@ export default function Transactions() {
           ))}
         </select>
 
-        {/* 수량 */}
         <input
           type="number"
           value={qty}
@@ -107,12 +116,7 @@ export default function Transactions() {
           style={input}
         />
 
-        {/* 타입 */}
-        <select
-          value={type}
-          onChange={(e) => setType(e.target.value)}
-          style={input}
-        >
+        <select value={type} onChange={(e) => setType(e.target.value)} style={input}>
           <option value="OUT">출고(매출)</option>
           <option value="IN">입고</option>
         </select>
@@ -125,7 +129,6 @@ export default function Transactions() {
   );
 }
 
-/* 스타일 */
 const cardStyle = {
   background: "white",
   padding: "20px",
