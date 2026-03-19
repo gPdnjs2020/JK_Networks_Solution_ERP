@@ -1,0 +1,57 @@
+import { useEffect, useState } from "react";
+import { Bar } from "react-chartjs-2";
+import "chart.js/auto";
+
+export default function Dashboard() {
+  const [sales, setSales] = useState(0);
+  const [stockValue, setStockValue] = useState(0);
+
+  // 임시 데이터 (나중에 API 연결)
+  useEffect(() => {
+    setSales(320000);
+    setStockValue(1500000);
+  }, []);
+
+  const chartData = {
+    labels: ["1월", "2월", "3월"],
+    datasets: [
+      {
+        label: "매출",
+        data: [100000, 200000, 320000],
+      },
+    ],
+  };
+
+  return (
+    <div style={{ padding: "20px" }}>
+      <h1>📊 ERP 대시보드</h1>
+
+      {/* KPI 카드 */}
+      <div style={{ display: "flex", gap: "20px", marginBottom: "20px" }}>
+        <div style={cardStyle}>
+          <h3>오늘 매출</h3>
+          <p>{sales.toLocaleString()} 원</p>
+        </div>
+
+        <div style={cardStyle}>
+          <h3>재고 자산</h3>
+          <p>{stockValue.toLocaleString()} 원</p>
+        </div>
+      </div>
+
+      {/* 그래프 */}
+      <div style={cardStyle}>
+        <h3>월별 매출</h3>
+        <Bar data={chartData} />
+      </div>
+    </div>
+  );
+}
+
+const cardStyle = {
+  background: "white",
+  padding: "20px",
+  borderRadius: "10px",
+  boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+  flex: 1,
+};
