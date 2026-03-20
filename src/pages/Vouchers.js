@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import "../styles/global.css";
 
 const API = "http://127.0.0.1:5000";
 

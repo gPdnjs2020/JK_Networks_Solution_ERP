@@ -1,0 +1,46 @@
+body {
+    margin: 0;
+    font-family: "Pretendard", sans-serif;
+    background: #f5f7fa;
+  }
+  
+  /* 카드 */
+  .card {
+    background: white;
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+  
+  /* 버튼 */
+  .btn {
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+  }
+  
+  .btn-primary {
+    background: #03c75a;
+    color: white;
+  }
+  
+  .btn-blue {
+    background: #2563eb;
+    color: white;
+  }
+  
+  /* input */
+  .input {
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid #ddd;
+    margin-right: 10px;
+  }
+  
+  /* 제목 */
+  .title {
+    font-size: 22px;
+    font-weight: bold;
+    margin-bottom: 20px;
+  }
