@@ -3,200 +3,76 @@ import sqlite3
 from flask_cors import CORS
 
 app = Flask(__name__)
-CORS(app)
+# 리액트(3000번)에서 오는 요청을 허용합니다.
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 DB = "erp.db"
 
 def get_db():
-    return sqlite3.connect(DB)
+    conn = sqlite3.connect(DB)
+    conn.row_factory = sqlite3.Row # 결과를 딕셔너리처럼 다룰 수 있게 설정
+    return conn
 
-# -------------------------------
-# DB 초기화
-# -------------------------------
-@app.route("/init")
-def init():
-    con = get_db()
-    cur = con.cursor()
-
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS products (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT,
-        price INTEGER,
-        stock INTEGER
-    )
-    """)
-
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS partners (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT,
-        balance INTEGER
-    )
-    """)
-
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS vouchers (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        partner TEXT,
-        product TEXT,
-        qty INTEGER,
-        supply INTEGER,
-        vat INTEGER,
-        total INTEGER,
-        date TEXT
-    )
-    """)
-
-    con.commit()
-    con.close()
-
-    return "DB Initialized"
+# 서버 시작 시 DB 초기화 자동 실행
+def init_db():
+    with get_db() as con:
+        cur = con.cursor()
+        cur.execute("CREATE TABLE IF NOT EXISTS products (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, price INTEGER, stock INTEGER DEFAULT 0)")
+        cur.execute("CREATE TABLE IF NOT EXISTS partners (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, balance INTEGER DEFAULT 0)")
+        cur.execute("CREATE TABLE IF NOT EXISTS vouchers (id INTEGER PRIMARY KEY AUTOINCREMENT, partner TEXT, product TEXT, qty INTEGER, supply INTEGER, vat INTEGER, total INTEGER, date TEXT)")
+        con.commit()
 
 @app.route("/products", methods=["GET"])
 def get_products():
     con = get_db()
-    cur = con.cursor()
-
-    cur.execute("SELECT * FROM products")
-    rows = cur.fetchall()
-
-    result = []
-    for r in rows:
-        result.append({
-            "id": r[0],
-            "name": r[1],
-            "price": r[2],
-            "stock": r[3]
-        })
-
-    return jsonify(result)
-
-
-@app.route("/products", methods=["POST"])
-def add_product():
-    data = request.json
-
-    con = get_db()
-    cur = con.cursor()
-
-    cur.execute(
-        "INSERT INTO products(name, price, stock) VALUES (?, ?, ?)",
-        (data["name"], data["price"], 0)
-    )
-
-    con.commit()
-    con.close()
-
-    return "OK"
-
-@app.route("/partners", methods=["GET"])
-def get_partners():
-    con = get_db()
-    cur = con.cursor()
-
-    cur.execute("SELECT * FROM partners")
-    rows = cur.fetchall()
-
-    result = []
-    for r in rows:
-        result.append({
-            "id": r[0],
-            "name": r[1],
-            "balance": r[2]
-        })
-
-    return jsonify(result)
-
-
-@app.route("/partners", methods=["POST"])
-def add_partner():
-    data = request.json
-
-    con = get_db()
-    cur = con.cursor()
-
-    cur.execute(
-        "INSERT INTO partners(name, balance) VALUES (?, 0)",
-        (data["name"],)
-    )
-
-    con.commit()
-    con.close()
-
-    return "OK"
+    rows = con.execute("SELECT * FROM products").fetchall()
+    # row_factory 덕분에 훨씬 깔끔하게 변환 가능합니다.
+    return jsonify([dict(row) for row in rows])
 
 @app.route("/transaction", methods=["POST"])
 def transaction():
     data = request.json
+    try:
+        with get_db() as con:
+            cur = con.cursor()
+            
+            # 1. 데이터 가져오기 (데이터 타입 변환 안전하게)
+            p_id = int(data["product_id"])
+            pa_id = int(data["partner_id"])
+            qty = int(data["qty"])
+            t_type = data["type"]
 
-    con = get_db()
-    cur = con.cursor()
+            # 2. 조회 (값이 없을 경우 대비)
+            product = cur.execute("SELECT name, price, stock FROM products WHERE id=?", (p_id,)).fetchone()
+            partner = cur.execute("SELECT name, balance FROM partners WHERE id=?", (pa_id,)).fetchone()
+            
+            if not product or not partner:
+                return jsonify({"error": "상품 또는 거래처를 찾을 수 없습니다."}), 400
 
-    product_id = data["product_id"]
-    partner_id = data["partner_id"]
-    qty = data["qty"]
-    type = data["type"]
+            total = product['price'] * qty
+            supply = int(total / 1.1)
+            vat = total - supply
+            
+            # 3. 재고 및 잔액 계산
+            new_stock = product['stock'] + qty if t_type == "IN" else product['stock'] - qty
+            new_balance = partner['balance'] + total if t_type == "OUT" else partner['balance'] - total
 
-    # 상품 조회
-    cur.execute("SELECT name, price, stock FROM products WHERE id=?", (product_id,))
-    product = cur.fetchone()
+            # 4. 업데이트 수행 (트랜잭션)
+            cur.execute("UPDATE products SET stock=? WHERE id=?", (new_stock, p_id))
+            cur.execute("UPDATE partners SET balance=? WHERE id=?", (new_balance, pa_id))
+            
+            # 5. 전표 기록
+            cur.execute("""
+                INSERT INTO vouchers(partner, product, qty, supply, vat, total, date)
+                VALUES (?, ?, ?, ?, ?, ?, date('now'))
+            """, (partner['name'], product['name'], qty, supply, vat, total))
+            
+            con.commit()
+        return jsonify({"message": "success", "stock": new_stock})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-    # 거래처 조회
-    cur.execute("SELECT name, balance FROM partners WHERE id=?", (partner_id,))
-    partner = cur.fetchone()
-
-    name, price, stock = product
-    pname, balance = partner
-
-    total = price * qty
-    supply = int(total / 1.1)
-    vat = total - supply
-
-    # 재고 업데이트
-    if type == "OUT":
-        new_stock = stock - qty
-    else:
-        new_stock = stock + qty
-
-    cur.execute("UPDATE products SET stock=? WHERE id=?", (new_stock, product_id))
-
-    # 미수금 업데이트
-    if type == "OUT":
-        cur.execute("UPDATE partners SET balance=? WHERE id=?", (balance + total, partner_id))
-
-        # 전표 생성
-        cur.execute("""
-        INSERT INTO vouchers(partner, product, qty, supply, vat, total, date)
-        VALUES (?, ?, ?, ?, ?, ?, date('now'))
-        """, (pname, name, qty, supply, vat, total))
-
-    con.commit()
-    con.close()
-
-    return "OK"
-
-@app.route("/vouchers", methods=["GET"])
-def get_vouchers():
-    con = get_db()
-    cur = con.cursor()
-
-    cur.execute("SELECT * FROM vouchers ORDER BY id DESC")
-    rows = cur.fetchall()
-
-    result = []
-    for r in rows:
-        result.append({
-            "id": r[0],
-            "partner": r[1],
-            "product": r[2],
-            "qty": r[3],
-            "supply": r[4],
-            "vat": r[5],
-            "total": r[6],
-            "date": r[7],
-        })
-
-    return jsonify(result)
-
-app.run()
+if __name__ == '__main__':
+    init_db() # 서버 켤 때 DB 체크
+    # host='0.0.0.0'을 붙여야 외부(리액트) 접속이 원활합니다.
+    app.run(debug=True, port=5000, host='0.0.0.0')

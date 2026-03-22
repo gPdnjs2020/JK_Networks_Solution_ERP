@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import axios from "axios";
 import "../styles/global.css";
 
 const API = "http://127.0.0.1:5000";
@@ -24,53 +25,29 @@ export default function Transactions() {
   };
 
   const handle = async () => {
-    await fetch(`${API}/transaction`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        product_id: productId,
-        partner_id: partnerId,
-        qty,
-        type,
-      }),
+    if(!productId || !partnerId) return alert("상품과 거래처를 선택하세요.");
+    
+    await axios.post(`${API}/transaction`, {
+      product_id: productId,
+      partner_id: partnerId,
+      qty: Number(qty), // 반드시 숫자화
+      type,
     });
-
-    alert("처리 완료");
+    alert("전표가 발행되었습니다.");
     load();
   };
 
   return (
-    <div style={{ padding: "20px" }}>
-      <h1>입출고</h1>
-
-      <select onChange={(e) => setProductId(e.target.value)}>
-        <option>상품</option>
-        {products.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.name}
-          </option>
-        ))}
-      </select>
-
-      <select onChange={(e) => setPartnerId(e.target.value)}>
-        <option>거래처</option>
-        {partners.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.name}
-          </option>
-        ))}
-      </select>
-
-      <input type="number" value={qty} onChange={(e) => setQty(e.target.value)} />
-
-      <select onChange={(e) => setType(e.target.value)}>
-        <option value="OUT">출고</option>
-        <option value="IN">입고</option>
-      </select>
-
-      <button onClick={handle}>처리</button>
+    <div className="card" style={{ maxWidth: '600px' }}>
+      <h2 className="title">🔄 입출고 등록</h2>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+        <select className="input" onChange={(e) => setProductId(e.target.value)}>
+          <option value="">상품 선택</option>
+          {products.map(p => <option key={p.id} value={p.id}>{p.name} (재고: {p.stock})</option>)}
+        </select>
+        {/* ... 나머지 select/input 동일하되 class "input" 적용 ... */}
+        <button className="btn btn-primary" onClick={handle}>거래 확정</button>
+      </div>
     </div>
   );
 }

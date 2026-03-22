@@ -1,92 +1,62 @@
 import { useEffect, useState } from "react";
 import { Bar } from "react-chartjs-2";
+import axios from "axios";
+import Card from "../components/Card"; // 기존 Card 컴포넌트 활용
 import "chart.js/auto";
-import "../styles/global.css";
-
-const API = "http://127.0.0.1:5000";
 
 export default function Dashboard() {
-  const [sales, setSales] = useState(0);
-  const [supply, setSupply] = useState(0);
-  const [vat, setVat] = useState(0);
-  const [stockValue, setStockValue] = useState(0);
-
-  useEffect(() => {
-    loadData();
-  }, []);
+  const [stats, setStats] = useState({ sales: 0, supply: 0, vat: 0, stockValue: 0 });
 
   const loadData = async () => {
-    // 전표 가져오기
-    const vRes = await fetch(`${API}/vouchers`);
-    const vouchers = await vRes.json();
+    try {
+      const [vRes, pRes] = await Promise.all([
+        axios.get("http://localhost:5000/vouchers"),
+        axios.get("http://localhost:5000/products")
+      ]);
 
-    let total = 0;
-    let s = 0;
-    let v = 0;
+      const totals = vRes.data.reduce((acc, curr) => ({
+        sales: acc.sales + curr.total,
+        supply: acc.supply + curr.supply,
+        vat: acc.vat + curr.vat
+      }), { sales: 0, supply: 0, vat: 0 });
 
-    vouchers.forEach((x) => {
-      total += x.total;
-      s += x.supply;
-      v += x.vat;
-    });
-
-    setSales(total);
-    setSupply(s);
-    setVat(v);
-
-    // 상품 가져오기
-    const pRes = await fetch(`${API}/products`);
-    const products = await pRes.json();
-
-    let stockSum = 0;
-    products.forEach((p) => {
-      stockSum += p.price * p.stock;
-    });
-
-    setStockValue(stockSum);
+      const stockSum = pRes.data.reduce((acc, p) => acc + (p.price * p.stock), 0);
+      setStats({ ...totals, stockValue: stockSum });
+    } catch (e) { console.error("데이터 로드 실패", e); }
   };
 
+  useEffect(() => { loadData(); }, []);
+
   const chartData = {
-    labels: ["총매출"],
+    labels: ["매출 분석"],
     datasets: [
-      { label: "총액", data: [sales] },
-      { label: "공급가", data: [supply] },
-      { label: "VAT", data: [vat] },
+      { label: "공급가액", data: [stats.supply], backgroundColor: "#3b82f6" },
+      { label: "부가세", data: [stats.vat], backgroundColor: "#94a3b8" },
     ],
   };
 
   return (
-    <div style={{ padding: "20px" }}>
-      <h1>📊 ERP 대시보드</h1>
-
-      <div style={{ display: "flex", gap: "20px", marginBottom: "20px" }}>
-        <Card title="총 매출" value={sales} />
-        <Card title="공급가" value={supply} />
-        <Card title="부가세" value={vat} />
-        <Card title="재고 자산" value={stockValue} />
+    <div>
+      <h1 className="title">📊 실시간 경영 현황</h1>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "20px", marginBottom: "30px" }}>
+        <StatCard title="총 매출액" value={stats.sales} color="#2563eb" />
+        <StatCard title="재고 자산" value={stats.stockValue} color="#10b981" />
+        <StatCard title="공급가 합계" value={stats.supply} />
+        <StatCard title="미납 부가세" value={stats.vat} />
       </div>
-
-      <div style={cardStyle}>
-        <h3>매출 요약</h3>
-        <Bar data={chartData} />
+      <div className="card">
+        <h3>매출 구성비</h3>
+        <div style={{ height: '300px' }}><Bar data={chartData} options={{ maintainAspectRatio: false }} /></div>
       </div>
     </div>
   );
 }
 
-function Card({ title, value }) {
+function StatCard({ title, value, color = "#1e293b" }) {
   return (
-    <div style={cardStyle}>
-      <h3>{title}</h3>
-      <p>{value.toLocaleString()} 원</p>
+    <div className="card">
+      <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '8px' }}>{title}</div>
+      <div style={{ fontSize: '24px', fontWeight: 'bold', color }}>{value.toLocaleString()}원</div>
     </div>
   );
 }
-
-const cardStyle = {
-  background: "white",
-  padding: "20px",
-  borderRadius: "10px",
-  boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-  flex: 1,
-};
