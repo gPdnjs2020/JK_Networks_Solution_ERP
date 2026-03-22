@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const API = "http://localhost:5000";
+const API = "https://jk-networks-solution-erp.onrender.coms";
 
 // 로그인 API 호출
 export const login = async (username, password) => {

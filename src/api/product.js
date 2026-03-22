@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const API = "http://localhost:5000";
+const API = "https://jk-networks-solution-erp.onrender.com";
 
 // 상품 목록
 export const getProducts = async () => {
