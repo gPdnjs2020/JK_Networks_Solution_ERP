@@ -74,9 +74,9 @@ export default function Products() {
             </tr>
           </thead>
           <tbody>
-            {products.map(p => (
+            {products.map((p, index) => (
               <tr key={p.id}>
-                <td>{p.id}</td>
+                <td>{index + 1}</td>
                 <td><strong>{p.name}</strong></td>
                 <td>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
