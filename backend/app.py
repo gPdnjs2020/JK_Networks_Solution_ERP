@@ -5,7 +5,6 @@ from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
-# CORS 설정을 상단으로 통합합니다.
 CORS(app, resources={r"/*": {"origins": "*"}})
 
 DB = "erp.db"
@@ -28,10 +27,10 @@ def init_db():
         """)
         cur.execute("CREATE TABLE IF NOT EXISTS products (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, price INTEGER, stock INTEGER DEFAULT 0)")
         cur.execute("CREATE TABLE IF NOT EXISTS partners (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, balance INTEGER DEFAULT 0)")
-        cur.execute("CREATE TABLE IF NOT EXISTS vouchers (id INTEGER PRIMARY KEY AUTOINCREMENT, partner TEXT, product TEXT, qty INTEGER, supply INTEGER, vat INTEGER, total INTEGER, date TEXT)")
+        cur.execute("CREATE TABLE IF NOT EXISTS vouchers (id INTEGER PRIMARY KEY AUTOINCREMENT, partner TEXT, product TEXT, qty INTEGER, supply INTEGER, vat INTEGER, total INTEGER, date TEXT, type TEXT)")
         con.commit()
 
-# 회원가입 API
+# --- 인증 API ---
 @app.route("/register", methods=["POST"])
 def register():
     data = request.json
@@ -43,9 +42,8 @@ def register():
             con.commit()
         return jsonify({"message": "success"})
     except Exception as e:
-        return jsonify({"error": "이미 존재하는 아이디이거나 데이터가 잘못되었습니다."}), 400
+        return jsonify({"error": "이미 존재하는 아이디입니다."}), 400
 
-# 로그인 API
 @app.route("/login", methods=["POST"])
 def login():
     data = request.json
@@ -55,8 +53,7 @@ def login():
         user = con.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
     if user and check_password_hash(user["password"], password):
         return jsonify({"username": user["username"], "name": user["name"]})
-    else:
-        return jsonify({"error": "아이디 또는 비밀번호가 틀렸습니다."}), 401
+    return jsonify({"error": "로그인 실패"}), 401
 
 # --- 상품 API ---
 @app.route("/products", methods=["GET"])
@@ -69,33 +66,24 @@ def get_products():
 def add_product():
     data = request.json
     with get_db() as con:
-        con.execute("INSERT INTO products (name, price, stock) VALUES (?, ?, 0)", 
-                    (data["name"], data["price"]))
+        con.execute("INSERT INTO products (name, price, stock) VALUES (?, ?, 0)", (data["name"], data["price"]))
         con.commit()
     return jsonify({"message": "success"})
 
 @app.route("/products/<int:id>", methods=["DELETE"])
 def delete_product(id):
-    try:
-        with get_db() as con:
-            # 상품만 삭제합니다. (전표 기록은 보존됨)
-            con.execute("DELETE FROM products WHERE id = ?", (id,))
-            con.commit()
-        return jsonify({"message": "success"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    with get_db() as con:
+        con.execute("DELETE FROM products WHERE id = ?", (id,))
+        con.commit()
+    return jsonify({"message": "success"})
 
 @app.route("/products/<int:id>/stock", methods=["PATCH"])
 def update_stock(id):
-    try:
-        data = request.json
-        new_stock = data.get("stock")
-        with get_db() as con:
-            con.execute("UPDATE products SET stock = ? WHERE id = ?", (new_stock, id))
-            con.commit()
-        return jsonify({"message": "success"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    data = request.json
+    with get_db() as con:
+        con.execute("UPDATE products SET stock = ? WHERE id = ?", (data.get("stock"), id))
+        con.commit()
+    return jsonify({"message": "success"})
 
 # --- 거래처 API ---
 @app.route("/partners", methods=["GET"])
@@ -114,57 +102,44 @@ def add_partner():
 
 @app.route("/partners/<int:id>", methods=["DELETE"])
 def delete_partner(id):
-    try:
-        with get_db() as con:
-            con.execute("DELETE FROM partners WHERE id = ?", (id,))
-            con.commit()
-        return jsonify({"message": "success"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-    
-# app.py에 추가할 거래처 수정 API
+    with get_db() as con:
+        con.execute("DELETE FROM partners WHERE id = ?", (id,))
+        con.commit()
+    return jsonify({"message": "success"})
+
 @app.route("/partners/<int:id>", methods=["PATCH"])
 def update_partner(id):
-    try:
-        data = request.json
-        name = data.get("name")
-        balance = data.get("balance")
-        with get_db() as con:
-            con.execute("UPDATE partners SET name = ?, balance = ? WHERE id = ?", (name, balance, id))
-            con.commit()
-        return jsonify({"message": "success"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    data = request.json
+    with get_db() as con:
+        con.execute("UPDATE partners SET name = ?, balance = ? WHERE id = ?", (data.get("name"), data.get("balance"), id))
+        con.commit()
+    return jsonify({"message": "success"})
 
-# --- 입출고 & 전표 API ---
+# --- 전표 & 입출고 API (핵심 수정) ---
 @app.route("/transaction", methods=["POST"])
 def transaction():
     data = request.json
     try:
         with get_db() as con:
             cur = con.cursor()
-            p_id = int(data["product_id"])
-            pa_id = int(data["partner_id"])
-            qty = int(data["qty"])
-            t_type = data["type"]
-
+            p_id, pa_id, qty, t_type = int(data["product_id"]), int(data["partner_id"]), int(data["qty"]), data["type"]
             product = cur.execute("SELECT name, price, stock FROM products WHERE id=?", (p_id,)).fetchone()
             partner = cur.execute("SELECT name, balance FROM partners WHERE id=?", (pa_id,)).fetchone()
             
-            if not product or not partner:
-                return jsonify({"error": "정보 없음"}), 400
-
             total = product['price'] * qty
             supply = int(total / 1.1)
             vat = total - supply
             
-            new_stock = product['stock'] + qty if t_type == "IN" else product['stock'] - qty
-            new_balance = partner['balance'] + total if t_type == "OUT" else partner['balance'] - total
+            # 재고 및 잔액 계산
+            new_stock = product['stock'] + (qty if t_type == "IN" else -qty)
+            new_balance = partner['balance'] + (total if t_type == "OUT" else -total)
 
             cur.execute("UPDATE products SET stock=? WHERE id=?", (new_stock, p_id))
             cur.execute("UPDATE partners SET balance=? WHERE id=?", (new_balance, pa_id))
-            cur.execute("INSERT INTO vouchers(partner, product, qty, supply, vat, total, date) VALUES (?, ?, ?, ?, ?, ?, date('now'))",
-                        (partner['name'], product['name'], qty, supply, vat, total))
+            cur.execute("""
+                INSERT INTO vouchers(partner, product, qty, supply, vat, total, date, type)
+                VALUES (?, ?, ?, ?, ?, ?, date('now'), ?)
+            """, (partner['name'], product['name'], qty, supply, vat, total, t_type))
             con.commit()
         return jsonify({"message": "success"})
     except Exception as e:
@@ -176,8 +151,30 @@ def get_vouchers():
         rows = con.execute("SELECT * FROM vouchers ORDER BY id DESC").fetchall()
         return jsonify([dict(row) for row in rows])
 
+# --- 전표 삭제 API (데이터 복구 로직 추가) ---
+@app.route("/vouchers/<int:id>", methods=["DELETE"])
+def delete_voucher(id):
+    try:
+        with get_db() as con:
+            cur = con.cursor()
+            v = cur.execute("SELECT * FROM vouchers WHERE id=?", (id,)).fetchone()
+            if not v: return jsonify({"error": "전표 없음"}), 404
+            
+            # 전표 삭제 전, 수량과 잔액을 반대로 되돌림
+            # 매출(OUT) 전표 삭제 시 -> 재고 증가(+), 거래처 잔액 감소(-)
+            # 매입(IN) 전표 삭제 시 -> 재고 감소(-), 거래처 잔액 증가(+)
+            stock_adj = v['qty'] if v['type'] == "OUT" else -v['qty']
+            balance_adj = -v['total'] if v['type'] == "OUT" else v['total']
+            
+            cur.execute("UPDATE products SET stock = stock + ? WHERE name = ?", (stock_adj, v['product']))
+            cur.execute("UPDATE partners SET balance = balance + ? WHERE name = ?", (balance_adj, v['partner']))
+            cur.execute("DELETE FROM vouchers WHERE id = ?", (id,))
+            con.commit()
+        return jsonify({"message": "success"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 if __name__ == '__main__':
     init_db()
-    # Render 환경변수 PORT를 사용하도록 수정
     port = int(os.environ.get("PORT", 5000))
     app.run(debug=True, port=port, host='0.0.0.0')
