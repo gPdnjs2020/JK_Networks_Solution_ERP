@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 import sqlite3
 from flask_cors import CORS
+from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
@@ -15,10 +16,55 @@ def get_db():
 def init_db():
     with get_db() as con:
         cur = con.cursor()
+        # users 테이블: 아이디(username), 비밀번호(password), 이름(name)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE,
+                password TEXT,
+                name TEXT
+            )
+        """)
+        cur = con.cursor()
         cur.execute("CREATE TABLE IF NOT EXISTS products (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, price INTEGER, stock INTEGER DEFAULT 0)")
         cur.execute("CREATE TABLE IF NOT EXISTS partners (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, balance INTEGER DEFAULT 0)")
         cur.execute("CREATE TABLE IF NOT EXISTS vouchers (id INTEGER PRIMARY KEY AUTOINCREMENT, partner TEXT, product TEXT, qty INTEGER, supply INTEGER, vat INTEGER, total INTEGER, date TEXT)")
         con.commit()
+
+# 회원가입 API
+@app.route("/register", methods=["POST"])
+def register():
+    data = request.json
+    hashed_pw = generate_password_hash(data["password"]) # 비밀번호 암호화
+    try:
+        with get_db() as con:
+            con.execute("INSERT INTO users (username, password, name) VALUES (?, ?, ?)",
+                        (data["username"], hashed_pw, data["name"]))
+            con.commit()
+        return jsonify({"message": "success"})
+    except Exception as e:
+        print(e) # 터미널에 에러 출력
+        return jsonify({"error": "이미 존재하는 아이디이거나 데이터가 잘못되었습니다."}), 400
+    
+    
+# 로그인 API
+@app.route("/login", methods=["POST"])
+def login():
+    data = request.json
+    username = data.get("username")
+    password = data.get("password")
+    
+    with get_db() as con:
+        # row_factory 설정 덕분에 dict처럼 꺼낼 수 있습니다.
+        user = con.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+        
+    if user and check_password_hash(user["password"], password):
+        return jsonify({
+            "username": user["username"],
+            "name": user["name"]
+        })
+    else:
+        return jsonify({"error": "아이디 또는 비밀번호가 틀렸습니다."}), 401
 
 # --- 상품 API ---
 @app.route("/products", methods=["GET"])
