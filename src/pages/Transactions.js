@@ -1,52 +1,75 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
-import "../styles/global.css";
 
 const API = "http://127.0.0.1:5000";
 
 export default function Transactions() {
-  const [products, setProducts] = useState([]);
-  const [partners, setPartners] = useState([]);
-
-  const [productId, setProductId] = useState("");
-  const [partnerId, setPartnerId] = useState("");
-  const [qty, setQty] = useState(1);
-  const [type, setType] = useState("OUT");
+  const [data, setData] = useState({ products: [], partners: [] });
+  const [form, setForm] = useState({ productId: "", partnerId: "", qty: 1, type: "OUT" });
 
   useEffect(() => {
-    load();
+    const fetchAll = async () => {
+      const [p, pa] = await Promise.all([
+        axios.get(`${API}/products`),
+        axios.get(`${API}/partners`)
+      ]);
+      setData({ products: p.data, partners: pa.data });
+    };
+    fetchAll();
   }, []);
 
-  const load = async () => {
-    const p = await fetch(`${API}/products`).then((r) => r.json());
-    const pa = await fetch(`${API}/partners`).then((r) => r.json());
-    setProducts(p);
-    setPartners(pa);
-  };
-
-  const handle = async () => {
-    if(!productId || !partnerId) return alert("상품과 거래처를 선택하세요.");
-    
-    await axios.post(`${API}/transaction`, {
-      product_id: productId,
-      partner_id: partnerId,
-      qty: Number(qty), // 반드시 숫자화
-      type,
-    });
-    alert("전표가 발행되었습니다.");
-    load();
+  const handleTransaction = async () => {
+    try {
+      await axios.post(`${API}/transaction`, {
+        product_id: form.productId,
+        partner_id: form.partnerId,
+        qty: Number(form.qty),
+        type: form.type
+      });
+      alert(`${form.type === 'OUT' ? '출고' : '입고'} 처리가 완료되었습니다.`);
+    } catch (e) {
+      alert("처리 중 오류가 발생했습니다. 재고를 확인하세요.");
+    }
   };
 
   return (
-    <div className="card" style={{ maxWidth: '600px' }}>
-      <h2 className="title">🔄 입출고 등록</h2>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-        <select className="input" onChange={(e) => setProductId(e.target.value)}>
-          <option value="">상품 선택</option>
-          {products.map(p => <option key={p.id} value={p.id}>{p.name} (재고: {p.stock})</option>)}
-        </select>
-        {/* ... 나머지 select/input 동일하되 class "input" 적용 ... */}
-        <button className="btn btn-primary" onClick={handle}>거래 확정</button>
+    <div style={{ maxWidth: "600px" }}>
+      <h1 className="title">🔄 입출고 관리</h1>
+      <div className="card">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+          <label>거래 유형</label>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button
+              className={`btn ${form.type === 'OUT' ? 'btn-primary' : ''}`}
+              style={{ flex: 1, border: '1px solid #ddd' }}
+              onClick={() => setForm({ ...form, type: 'OUT' })}
+            >🔻 출고 (매출)</button>
+            <button
+              className={`btn ${form.type === 'IN' ? 'btn-primary' : ''}`}
+              style={{ flex: 1, border: '1px solid #ddd' }}
+              onClick={() => setForm({ ...form, type: 'IN' })}
+            >▲ 입고 (매입)</button>
+          </div>
+
+          <label>상품 선택</label>
+          <select onChange={e => setForm({ ...form, productId: e.target.value })}>
+            <option>상품을 선택하세요</option>
+            {data.products.map(p => <option key={p.id} value={p.id}>{p.name} (현재: {p.stock})</option>)}
+          </select>
+
+          <label>거래처 선택</label>
+          <select onChange={e => setForm({ ...form, partnerId: e.target.value })}>
+            <option>거래처를 선택하세요</option>
+            {data.partners.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+
+          <label>수량</label>
+          <input type="number" min="1" value={form.qty} onChange={e => setForm({ ...form, qty: e.target.value })} />
+
+          <button className="btn btn-primary" style={{ marginTop: '10px', padding: '15px' }} onClick={handleTransaction}>
+            거래 확정 및 전표 발행
+          </button>
+        </div>
       </div>
     </div>
   );

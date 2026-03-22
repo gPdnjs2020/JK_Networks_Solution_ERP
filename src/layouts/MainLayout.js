@@ -2,19 +2,13 @@ import Sidebar from "./Sidebar";
 
 export default function MainLayout({ children }) {
   return (
-    <div style={{ display: "flex" }}>
+    <div style={{ display: "flex", minHeight: "100vh" }}>
       <Sidebar />
-
-      <div style={content}>
-        {children}
-      </div>
+      <main style={{ flex: 1, padding: "40px", overflowY: "auto" }}>
+        <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
+          {children}
+        </div>
+      </main>
     </div>
   );
-}
-
-const content = {
-  flex: 1,
-  background: "#f4f6f9",
-  minHeight: "100vh",
-  padding: "20px",
-};
+} 
