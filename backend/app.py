@@ -142,3 +142,6 @@ def get_vouchers():
 if __name__ == '__main__':
     init_db()
     app.run(debug=True, port=5000, host='0.0.0.0')
+    
+# 모든 곳에서 오는 요청을 허용해야 배포된 리액트에서 접속 가능합니다.
+CORS(app, resources={r"/*": {"origins": "*"}})
