@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import "../styles/global.css";
 
-const API = "https://jk-networks-solution-erp.onrender.com";
+const API = "https://jk-erp-backend.onrender.com";
 
 export default function Partners() {
   const [partners, setPartners] = useState([]);

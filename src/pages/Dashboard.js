@@ -10,8 +10,8 @@ export default function Dashboard() {
   const loadData = async () => {
     try {
       const [vRes, pRes] = await Promise.all([
-        axios.get("https://jk-networks-solution-erp.onrender.com/vouchers"),
-        axios.get("https://jk-networks-solution-erp.onrender.com/products")
+        axios.get("https://jk-erp-backend.onrender.com/vouchers"),
+        axios.get("https://jk-erp-backend.onrender.com/products")
       ]);
 
       const totals = vRes.data.reduce((acc, curr) => ({

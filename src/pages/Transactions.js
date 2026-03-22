@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
 
-const API = "https://jk-networks-solution-erp.onrender.com";
+const API = "https://jk-erp-backend.onrender.com";
 
 export default function Transactions() {
   const [data, setData] = useState({ products: [], partners: [] });

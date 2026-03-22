@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import "../styles/global.css";
 
-const API = "https://jk-networks-solution-erp.onrender.com";
+const API = "https://jk-erp-backend.onrender.com";
 
 export default function Vouchers() {
   const [vouchers, setVouchers] = useState([]);
