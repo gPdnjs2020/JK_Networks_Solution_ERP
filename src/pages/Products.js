@@ -8,8 +8,12 @@ export default function Products() {
   const [form, setForm] = useState({ name: "", price: "" });
 
   const load = async () => {
-    const res = await axios.get(`${API}/products`);
-    setProducts(res.data);
+    try {
+      const res = await axios.get(`${API}/products`);
+      setProducts(res.data);
+    } catch (err) {
+      console.error("로딩 실패", err);
+    }
   };
 
   useEffect(() => { load(); }, []);
@@ -19,6 +23,30 @@ export default function Products() {
     await axios.post(`${API}/products`, { ...form, price: Number(form.price) });
     setForm({ name: "", price: "" });
     load();
+  };
+
+  // --- 추가된 삭제 함수 ---
+  const deleteProduct = async (id) => {
+    if (!window.confirm("이 상품을 정말 삭제하시겠습니까?")) return;
+    try {
+      await axios.delete(`${API}/products/${id}`);
+      load();
+    } catch (err) {
+      alert("삭제 실패!");
+    }
+  };
+
+  // --- 추가된 수량 조절 함수 ---
+  const changeStock = async (id, currentStock, delta) => {
+    const newStock = currentStock + delta;
+    if (newStock < 0) return alert("재고는 0보다 작을 수 없습니다.");
+
+    try {
+      await axios.patch(`${API}/products/${id}/stock`, { stock: newStock });
+      load();
+    } catch (err) {
+      alert("수정 실패!");
+    }
   };
 
   return (
@@ -38,7 +66,11 @@ export default function Products() {
         <table>
           <thead>
             <tr>
-              <th>ID</th><th>상품명</th><th>현재 재고</th><th>판매 단가</th>
+              <th>ID</th>
+              <th>상품명</th>
+              <th>현재 재고 (조절)</th>
+              <th>판매 단가</th>
+              <th>관리</th>
             </tr>
           </thead>
           <tbody>
@@ -46,8 +78,19 @@ export default function Products() {
               <tr key={p.id}>
                 <td>{p.id}</td>
                 <td><strong>{p.name}</strong></td>
-                <td style={{ color: p.stock < 5 ? 'red' : 'inherit' }}>{p.stock} 개</td>
+                <td>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
+                    <button className="btn" style={smallBtn} onClick={() => changeStock(p.id, p.stock, -1)}>-</button>
+                    <span style={{ color: p.stock < 5 ? 'red' : 'inherit', minWidth: '40px', fontWeight: 'bold' }}>
+                      {p.stock} 개
+                    </span>
+                    <button className="btn" style={smallBtn} onClick={() => changeStock(p.id, p.stock, 1)}>+</button>
+                  </div>
+                </td>
                 <td>{p.price.toLocaleString()} 원</td>
+                <td>
+                  <button className="btn" style={delBtn} onClick={() => deleteProduct(p.id)}>삭제</button>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -56,3 +99,21 @@ export default function Products() {
     </div>
   );
 }
+
+// --- 인라인 스타일 (CSS 파일에 넣으셔도 됩니다) ---
+const smallBtn = {
+  padding: '2px 8px',
+  fontSize: '14px',
+  backgroundColor: '#f3f4f6',
+  border: '1px solid #d1d5db',
+  cursor: 'pointer'
+};
+
+const delBtn = {
+  padding: '4px 10px',
+  fontSize: '13px',
+  backgroundColor: '#fee2e2',
+  color: '#b91c1c',
+  border: '1px solid #f87171',
+  cursor: 'pointer'
+};

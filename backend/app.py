@@ -143,5 +143,30 @@ if __name__ == '__main__':
     init_db()
     app.run(debug=True, port=5000, host='0.0.0.0')
     
+# --- 상품 삭제 및 수량 조정 API ---
+@app.route("/products/<int:id>", methods=["DELETE"])
+def delete_product(id):
+    with get_db() as con:
+        con.execute("DELETE FROM products WHERE id = ?", (id,))
+        con.commit()
+    return jsonify({"message": "deleted"})
+
+@app.route("/products/<int:id>/stock", methods=["PATCH"])
+def update_stock(id):
+    data = request.json
+    new_stock = data.get("stock")
+    with get_db() as con:
+        con.execute("UPDATE products SET stock = ? WHERE id = ?", (new_stock, id))
+        con.commit()
+    return jsonify({"message": "stock updated"})
+
+# --- 거래처 삭제 API ---
+@app.route("/partners/<int:id>", methods=["DELETE"])
+def delete_partner(id):
+    with get_db() as con:
+        con.execute("DELETE FROM partners WHERE id = ?", (id,))
+        con.commit()
+    return jsonify({"message": "deleted"})
+    
 # 모든 곳에서 오는 요청을 허용해야 배포된 리액트에서 접속 가능합니다.
 CORS(app, resources={r"/*": {"origins": "*"}})
