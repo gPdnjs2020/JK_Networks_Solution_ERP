@@ -1,60 +1,124 @@
 import { useEffect, useState } from "react";
-import { Bar } from "react-chartjs-2";
+import { Bar, Line } from "react-chartjs-2";
 import axios from "axios";
 import "chart.js/auto";
 
 const API = "https://jk-erp-backend.onrender.com";
 
 export default function Dashboard() {
-  const [stats, setStats] = useState({ sales: 0, supply: 0, vat: 0, stockValue: 0 });
+  const [stats, setStats] = useState({
+    totalSales: 0,      // 총 매출 (공급가)
+    totalPurchase: 0,   // 총 매입 (공급가)
+    totalProfit: 0,     // 당기 손익
+    totalBalance: 0,    // 거래처 미수금 합계
+    inventoryValue: 0,  // 재고 자산 가치
+    lowStockItems: []   // 재고 부족 상품 리스트
+  });
+
+  const [monthlyChart, setMonthlyChart] = useState({ labels: [], datasets: [] });
 
   const loadData = async () => {
     try {
-      const [vRes, pRes] = await Promise.all([
+      const [vRes, pRes, paRes] = await Promise.all([
         axios.get(`${API}/vouchers`),
-        axios.get(`${API}/products`)
+        axios.get(`${API}/products`),
+        axios.get(`${API}/partners`)
       ]);
 
-      // 데이터가 숫자인지 확실하게 변환하여 합산합니다.
-      const totals = vRes.data.reduce((acc, curr) => ({
-        sales: acc.sales + Number(curr.total || 0),
-        supply: acc.supply + Number(curr.supply || 0),
-        vat: acc.vat + Number(curr.vat || 0)
-      }), { sales: 0, supply: 0, vat: 0 });
+      const vouchers = vRes.data;
+      const products = pRes.data;
+      const partners = paRes.data;
 
-      const stockSum = pRes.data.reduce((acc, p) => acc + (Number(p.price || 0) * Number(p.stock || 0)), 0);
+      // 1. 손익 및 매출/매입 계산
+      let sales = 0;
+      let purchase = 0;
+      vouchers.forEach(v => {
+        if (v.v_type === '판매' || v.type === 'OUT') sales += Number(v.supply || 0);
+        else if (v.v_type === '구매' || v.type === 'IN') purchase += Number(v.supply || 0);
+      });
+
+      // 2. 미수금 및 재고자산 계산
+      const balanceSum = partners.reduce((acc, p) => acc + Number(p.balance || 0), 0);
+      const stockSum = products.reduce((acc, p) => acc + (Number(p.price || 0) * Number(p.stock || 0)), 0);
       
-      setStats({ ...totals, stockValue: stockSum });
+      // 3. 재고 부족 알림 (5개 미만)
+      const lowStock = products.filter(p => p.stock < 5);
+
+      setStats({
+        totalSales: sales,
+        totalPurchase: purchase,
+        totalProfit: sales - purchase,
+        totalBalance: balanceSum,
+        inventoryValue: stockSum,
+        lowStockItems: lowStock
+      });
+
+      // 4. 월별 추이 데이터 가공
+      const months = [...new Set(vouchers.map(v => v.date.substring(0, 7)))].sort();
+      const salesData = months.map(m => 
+        vouchers.filter(v => v.date.startsWith(m) && (v.v_type === '판매' || v.type === 'OUT'))
+        .reduce((sum, v) => sum + v.supply, 0)
+      );
+      const profitData = months.map((m, i) => {
+        const p = vouchers.filter(v => v.date.startsWith(m) && (v.v_type === '구매' || v.type === 'IN'))
+                  .reduce((sum, v) => sum + v.supply, 0);
+        return salesData[i] - p;
+      });
+
+      setMonthlyChart({
+        labels: months,
+        datasets: [
+          { label: "월 매출", data: salesData, backgroundColor: "#3b82f6", type: 'bar' },
+          { label: "월 순익", data: profitData, borderColor: "#10b981", tension: 0.3, type: 'line' },
+        ],
+      });
+
     } catch (e) { 
       console.error("데이터 로드 실패", e); 
     }
   };
 
-  useEffect(() => { 
-    loadData(); 
-  }, []); // 페이지가 로드될 때마다 실행
-
-  const chartData = {
-    labels: ["매출 분석"],
-    datasets: [
-      { label: "공급가액", data: [stats.supply], backgroundColor: "#3b82f6" },
-      { label: "부가세", data: [stats.vat], backgroundColor: "#94a3b8" },
-    ],
-  };
+  useEffect(() => { loadData(); }, []);
 
   return (
-    <div>
-      <h1 className="title">📊 실시간 경영 현황</h1>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "20px", marginBottom: "30px" }}>
-        <StatCard title="총 매출액" value={stats.sales} color="#2563eb" />
-        <StatCard title="재고 자산" value={stats.stockValue} color="#10b981" />
-        <StatCard title="공급가 합계" value={stats.supply} />
-        <StatCard title="미납 부가세" value={stats.vat} />
+    <div style={{ paddingBottom: '50px' }}>
+      <h1 className="title">📊 실시간 경영 현황 (JK-ERP)</h1>
+      
+      {/* 재고 부족 알림 섹션 */}
+      {stats.lowStockItems.length > 0 && (
+        <div className="card" style={{ borderLeft: '5px solid #ef4444', backgroundColor: '#fef2f2', marginBottom: '20px' }}>
+          <span style={{ color: '#dc2626', fontWeight: 'bold' }}>⚠️ 재고 부족 주의: </span>
+          {stats.lowStockItems.map(p => `${p.name}(${p.stock})`).join(", ")}
+        </div>
+      )}
+
+      {/* 상단 핵심 지표 카드 */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "20px", marginBottom: "30px" }}>
+        <StatCard title="누적 매출액(공급가)" value={stats.totalSales} color="#2563eb" />
+        <StatCard title="누적 매입액" value={stats.totalPurchase} color="#64748b" />
+        <StatCard title="당기 추정 순익" value={stats.totalProfit} color={stats.totalProfit >= 0 ? "#10b981" : "#ef4444"} />
+        <StatCard title="재고 자산 가치" value={stats.inventoryValue} color="#8b5cf6" />
+        <StatCard title="미수금(받을 돈)" value={stats.totalBalance} color="#f59e0b" />
       </div>
-      <div className="card">
-        <h3>매출 구성비</h3>
-        <div style={{ height: '300px' }}>
-          <Bar data={chartData} options={{ maintainAspectRatio: false }} />
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }} className="mobile-column">
+        {/* 월별 손익 그래프 */}
+        <div className="card">
+          <h3>월별 매출 및 순익 추이</h3>
+          <div style={{ height: '300px' }}>
+            <Bar data={monthlyChart} options={{ maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }} />
+          </div>
+        </div>
+
+        {/* 간단 보고서 요약 */}
+        <div className="card">
+          <h3>📋 경영 보고 요약</h3>
+          <ul style={{ lineHeight: '2.5', fontSize: '15px', paddingLeft: '20px' }}>
+            <li>현재 창고에 <strong>{stats.inventoryValue.toLocaleString()}원</strong> 상당의 재고가 보관 중입니다.</li>
+            <li>거래처로부터 회수해야 할 미수금은 총 <strong>{stats.totalBalance.toLocaleString()}원</strong>입니다.</li>
+            <li>이번 달까지의 매출이익률은 <strong>{stats.totalSales ? ((stats.totalProfit / stats.totalSales) * 100).toFixed(1) : 0}%</strong>입니다.</li>
+            <li>재고 보충이 필요한 품목이 <strong>{stats.lowStockItems.length}건</strong> 확인되었습니다.</li>
+          </ul>
         </div>
       </div>
     </div>
@@ -63,9 +127,10 @@ export default function Dashboard() {
 
 function StatCard({ title, value, color = "#1e293b" }) {
   return (
-    <div className="card">
-      <div style={{ fontSize: '14px', color: '#64748b', marginBottom: '8px' }}>{title}</div>
-      <div style={{ fontSize: '24px', fontWeight: 'bold', color }}>{(value || 0).toLocaleString()}원</div>
+    <div className="card" style={{ position: 'relative', overflow: 'hidden' }}>
+      <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '8px', fontWeight: '500' }}>{title}</div>
+      <div style={{ fontSize: '22px', fontWeight: 'bold', color }}>{(value || 0).toLocaleString()}원</div>
+      <div style={{ position: 'absolute', right: '-10px', bottom: '-10px', opacity: 0.05, fontSize: '60px' }}>💰</div>
     </div>
   );
 }

@@ -1,14 +1,19 @@
 from flask import Flask, request, jsonify
 import sqlite3
 import os
+import datetime
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
-# 모든 도메인에서의 요청을 허용 (CORS)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
-DB = "erp.db"
+# [수정] Render Disk 경로 설정 (유실 방지)
+DISK_PATH = "/etc/data"
+if os.path.exists(DISK_PATH):
+    DB = os.path.join(DISK_PATH, "erp.db")
+else:
+    DB = "erp.db"
 
 def get_db():
     conn = sqlite3.connect(DB)
@@ -16,43 +21,65 @@ def get_db():
     return conn
 
 def init_db():
+    db_dir = os.path.dirname(DB)
+    if db_dir and not os.path.exists(db_dir):
+        os.makedirs(db_dir)
+
     with get_db() as con:
         cur = con.cursor()
-        # 1. 유저 테이블
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE,
-                password TEXT,
-                name TEXT
-            )
-        """)
-        # 2. 상품 테이블
-        cur.execute("CREATE TABLE IF NOT EXISTS products (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, price INTEGER, stock INTEGER DEFAULT 0)")
-        # 3. 거래처 테이블
-        cur.execute("CREATE TABLE IF NOT EXISTS partners (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, balance INTEGER DEFAULT 0)")
-        # 4. 전표 테이블 (type 컬럼 포함)
+        # 1. 유저 (기초정보)
+        cur.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT, name TEXT)")
+        
+        # 2. 상품 (기초정보 - 규격/단위/원가/창고 추가 가능하게 확장)
+        cur.execute("CREATE TABLE IF NOT EXISTS products (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, price INTEGER, cost INTEGER DEFAULT 0, stock INTEGER DEFAULT 0, category TEXT)")
+        
+        # 3. 거래처 (기초정보 - 사업자번호/연락처 등 확장 가능)
+        cur.execute("CREATE TABLE IF NOT EXISTS partners (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, balance INTEGER DEFAULT 0, tel TEXT)")
+        
+        # 4. 계정과목 (재무관리용 기초정보)
+        cur.execute("CREATE TABLE IF NOT EXISTS accounts (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, type TEXT)")
+        
+        # 5. 전표 (판매/구매/재무 통합 테이블)
+        # v_num: 전표번호, v_type: '판매', '구매', '견적', '발주', '수금', '지급'
         cur.execute("""
             CREATE TABLE IF NOT EXISTS vouchers (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, 
-                partner TEXT, 
-                product TEXT, 
-                qty INTEGER, 
-                supply INTEGER, 
-                vat INTEGER, 
-                total INTEGER, 
-                date TEXT, 
-                type TEXT
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                v_num TEXT UNIQUE,
+                v_type TEXT,
+                partner TEXT,
+                product TEXT,
+                qty INTEGER DEFAULT 0,
+                supply INTEGER DEFAULT 0,
+                vat INTEGER DEFAULT 0,
+                total INTEGER DEFAULT 0,
+                date TEXT,
+                account_name TEXT,
+                memo TEXT
             )
         """)
         
-        # [중요] 기존 DB에 type 컬럼이 없는 경우를 대비해 자동 추가
-        try:
-            cur.execute("ALTER TABLE vouchers ADD COLUMN type TEXT")
-        except:
-            pass # 이미 컬럼이 있으면 에러가 나므로 무시함
-            
+        # 초기 계정과목 데이터 삽입 (없을 때만)
+        cur.execute("SELECT count(*) as cnt FROM accounts")
+        if cur.fetchone()['cnt'] == 0:
+            accounts = [('매출', '수익'), ('상품매입', '비용'), ('급여', '비용'), ('임차료', '비용'), ('외상매출금', '자산')]
+            cur.executemany("INSERT INTO accounts (name, type) VALUES (?, ?)", accounts)
+
         con.commit()
+
+# --- 전표번호 자동 생성 함수 (예: V20240522-001) ---
+def generate_v_num(v_type_prefix):
+    today = datetime.datetime.now().strftime("%Y%m%d")
+    with get_db() as con:
+        row = con.execute("SELECT COUNT(*) as cnt FROM vouchers WHERE date = date('now')").fetchone()
+        count = row['cnt'] + 1
+        return f"{v_type_prefix}-{today}-{count:03d}"
+
+# --- 기초정보: 계정과목 API ---
+@app.route("/accounts", methods=["GET"])
+def get_accounts():
+    with get_db() as con:
+        rows = con.execute("SELECT * FROM accounts").fetchall()
+        return jsonify([dict(row) for row in rows])
 
 # --- 인증 API ---
 @app.route("/register", methods=["POST"])
@@ -61,153 +88,128 @@ def register():
     hashed_pw = generate_password_hash(data["password"])
     try:
         with get_db() as con:
-            con.execute("INSERT INTO users (username, password, name) VALUES (?, ?, ?)",
-                        (data["username"], hashed_pw, data["name"]))
+            con.execute("INSERT INTO users (username, password, name) VALUES (?, ?, ?)", (data["username"], hashed_pw, data["name"]))
             con.commit()
         return jsonify({"message": "success"})
-    except Exception as e:
+    except:
         return jsonify({"error": "이미 존재하는 아이디입니다."}), 400
 
 @app.route("/login", methods=["POST"])
 def login():
     data = request.json
-    username = data.get("username")
-    password = data.get("password")
     with get_db() as con:
-        user = con.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
-    if user and check_password_hash(user["password"], password):
+        user = con.execute("SELECT * FROM users WHERE username = ?", (data.get("username"),)).fetchone()
+    if user and check_password_hash(user["password"], data.get("password")):
         return jsonify({"username": user["username"], "name": user["name"]})
     return jsonify({"error": "로그인 실패"}), 401
 
-# --- 상품 API ---
-@app.route("/products", methods=["GET"])
-def get_products():
+# --- 상품/거래처 API (기존 유지 및 확장) ---
+@app.route("/products", methods=["GET", "POST"])
+def handle_products():
+    if request.method == "POST":
+        data = request.json
+        with get_db() as con:
+            con.execute("INSERT INTO products (name, price, stock) VALUES (?, ?, ?)", (data["name"], data["price"], data.get("stock", 0)))
+            con.commit()
+        return jsonify({"message": "success"})
     with get_db() as con:
         rows = con.execute("SELECT * FROM products").fetchall()
         return jsonify([dict(row) for row in rows])
 
-@app.route("/products", methods=["POST"])
-def add_product():
-    data = request.json
-    with get_db() as con:
-        con.execute("INSERT INTO products (name, price, stock) VALUES (?, ?, 0)", (data["name"], data["price"]))
-        con.commit()
-    return jsonify({"message": "success"})
-
-@app.route("/products/<int:id>", methods=["DELETE"])
-def delete_product(id):
-    with get_db() as con:
-        con.execute("DELETE FROM products WHERE id = ?", (id,))
-        con.commit()
-    return jsonify({"message": "success"})
-
-@app.route("/products/<int:id>/stock", methods=["PATCH"])
-def update_stock(id):
-    data = request.json
-    with get_db() as con:
-        con.execute("UPDATE products SET stock = ? WHERE id = ?", (data.get("stock"), id))
-        con.commit()
-    return jsonify({"message": "success"})
-
-# --- 거래처 API ---
-@app.route("/partners", methods=["GET"])
-def get_partners():
+@app.route("/partners", methods=["GET", "POST"])
+def handle_partners():
+    if request.method == "POST":
+        data = request.json
+        with get_db() as con:
+            con.execute("INSERT INTO partners (name, balance) VALUES (?, 0)", (data["name"],))
+            con.commit()
+        return jsonify({"message": "success"})
     with get_db() as con:
         rows = con.execute("SELECT * FROM partners").fetchall()
         return jsonify([dict(row) for row in rows])
 
-@app.route("/partners", methods=["POST"])
-def add_partner():
-    data = request.json
-    with get_db() as con:
-        con.execute("INSERT INTO partners (name, balance) VALUES (?, 0)", (data["name"],))
-        con.commit()
-    return jsonify({"message": "success"})
-
-@app.route("/partners/<int:id>", methods=["DELETE"])
-def delete_partner(id):
-    with get_db() as con:
-        con.execute("DELETE FROM partners WHERE id = ?", (id,))
-        con.commit()
-    return jsonify({"message": "success"})
-
-@app.route("/partners/<int:id>", methods=["PATCH"])
-def update_partner(id):
-    data = request.json
-    with get_db() as con:
-        con.execute("UPDATE partners SET name = ?, balance = ? WHERE id = ?", (data.get("name"), data.get("balance"), id))
-        con.commit()
-    return jsonify({"message": "success"})
-
-# --- 입출고 & 전표 API ---
+# --- 핵심: 재고/판매/구매/재무 통합 트랜잭션 ---
 @app.route("/transaction", methods=["POST"])
 def transaction():
     data = request.json
     try:
         with get_db() as con:
             cur = con.cursor()
-            p_id = int(data["product_id"])
-            pa_id = int(data["partner_id"])
-            qty = int(data["qty"])
-            t_type = data["type"] # "IN"(매입) 또는 "OUT"(매출)
-
-            product = cur.execute("SELECT name, price, stock FROM products WHERE id=%s", (p_id,)).fetchone()
-            partner = cur.execute("SELECT name, balance FROM partners WHERE id=%s", (pa_id,)).fetchone()
+            p_id = data.get("product_id")
+            pa_id = data.get("partner_id")
+            qty = int(data.get("qty", 0))
+            t_type = data["type"] # '판매'(매출), '구매'(매입), '견적', '발주'
             
-            # [수정된 계산 로직]
-            # 보통 단가(price)를 공급가라고 가정할 때:
+            # 1. 정보 가져오기
+            product = cur.execute("SELECT * FROM products WHERE id=?", (p_id,)).fetchone()
+            partner = cur.execute("SELECT * FROM partners WHERE id=?", (pa_id,)).fetchone()
+            
+            # 2. 금액 계산
             supply = product['price'] * qty
-            vat = int(supply * 0.1)  # 부가세 10%
-            total = supply + vat     # 총 합계 금액
-
-            # 재고 및 미수금(잔액) 업데이트
-            # 매출(OUT)일 때: 재고 감소(-), 거래처 잔액 증가(+) -> 나중에 받을 돈
-            # 매입(IN)일 때: 재고 증가(+), 거래처 잔액 감소(-) -> 나중에 줄 돈
-            new_stock = product['stock'] + (qty if t_type == "IN" else -qty)
-            new_balance = partner['balance'] + (total if t_type == "OUT" else -total)
-
-            cur.execute("UPDATE products SET stock=%s WHERE id=%s", (new_stock, p_id))
-            cur.execute("UPDATE partners SET balance=%s WHERE id=%s", (new_balance, pa_id))
+            vat = int(supply * 0.1)
+            total = supply + vat
             
-            # 전표 테이블에 'type' 저장 확인
+            # 3. 전표번호 생성
+            v_prefix = "S" if t_type == "판매" else "P" if t_type == "구매" else "Q"
+            v_num = generate_v_num(v_prefix)
+
+            # 4. 재고 및 잔액 업데이트 (견적/발주는 실제 재고에 영향 없음)
+            if t_type == "판매":
+                cur.execute("UPDATE products SET stock = stock - ? WHERE id = ?", (qty, p_id))
+                cur.execute("UPDATE partners SET balance = balance + ? WHERE id = ?", (total, pa_id))
+            elif t_type == "구매":
+                cur.execute("UPDATE products SET stock = stock + ? WHERE id = ?", (qty, p_id))
+                cur.execute("UPDATE partners SET balance = balance - ? WHERE id = ?", (total, pa_id))
+
+            # 5. 자동 전표 기록
             cur.execute("""
-                INSERT INTO vouchers(partner, product, qty, supply, vat, total, date, type)
-                VALUES (%s, %s, %s, %s, %s, %s, TO_CHAR(NOW(), 'YYYY-MM-DD'), %s)
-            """, (partner['name'], product['name'], qty, supply, vat, total, t_type))
+                INSERT INTO vouchers(v_num, v_type, partner, product, qty, supply, vat, total, date, account_name)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, date('now'), ?)
+            """, (v_num, t_type, partner['name'], product['name'], qty, supply, vat, total, 
+                  '매출' if t_type == "판매" else '상품매입'))
             
             con.commit()
-        return jsonify({"message": "success"})
+        return jsonify({"message": "success", "v_num": v_num})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+# --- 재무/보고서: 손익 및 현황 API ---
+@app.route("/reports/profit-loss", methods=["GET"])
+def get_profit_loss():
+    # 월별 매출, 매입 합계 계산
+    with get_db() as con:
+        query = """
+            SELECT strftime('%Y-%m', date) as month,
+                   SUM(CASE WHEN v_type='판매' THEN supply ELSE 0 END) as sales,
+                   SUM(CASE WHEN v_type='구매' THEN supply ELSE 0 END) as purchase
+            FROM vouchers
+            GROUP BY month
+        """
+        rows = con.execute(query).fetchall()
+        return jsonify([dict(row) for row in rows])
 
 @app.route("/vouchers", methods=["GET"])
 def get_vouchers():
     with get_db() as con:
-        rows = con.execute("SELECT * FROM vouchers ORDER BY id DESC").fetchall()
+        rows = con.execute("SELECT * FROM vouchers ORDER BY date DESC, id DESC").fetchall()
         return jsonify([dict(row) for row in rows])
 
-# --- 전표 삭제 API (데이터 복원 로직) ---
 @app.route("/vouchers/<int:id>", methods=["DELETE"])
 def delete_voucher(id):
     try:
         with get_db() as con:
             cur = con.cursor()
-            # 1. 삭제할 전표 정보 먼저 가져오기
             v = cur.execute("SELECT * FROM vouchers WHERE id=?", (id,)).fetchone()
-            if not v:
-                return jsonify({"error": "전표를 찾을 수 없습니다."}), 404
+            if not v: return jsonify({"error": "Not Found"}), 404
             
-            # 2. 역계산 (삭제하려는 전표의 반대 작업을 수행)
-            # 매출(OUT) 전표 삭제 -> 재고 증가(+), 잔액 감소(-)
-            # 매입(IN) 전표 삭제 -> 재고 감소(-), 잔액 증가(+)
-            qty_change = v['qty'] if v['type'] == 'OUT' else -v['qty']
-            balance_change = -v['total'] if v['type'] == 'OUT' else v['total']
+            # 복구 로직 (판매 삭제 시 재고+, 잔액-) / (구매 삭제 시 재고-, 잔액+)
+            if v['v_type'] == "판매":
+                cur.execute("UPDATE products SET stock = stock + ? WHERE name = ?", (v['qty'], v['product']))
+                cur.execute("UPDATE partners SET balance = balance - ? WHERE name = ?", (v['total'], v['partner']))
+            elif v['v_type'] == "구매":
+                cur.execute("UPDATE products SET stock = stock - ? WHERE name = ?", (v['qty'], v['product']))
+                cur.execute("UPDATE partners SET balance = balance + ? WHERE name = ?", (v['total'], v['partner']))
             
-            # 3. 상품 재고 및 거래처 잔액 복원 (이름 기준)
-            cur.execute("UPDATE products SET stock = stock + ? WHERE name = ?", (qty_change, v['product']))
-            cur.execute("UPDATE partners SET balance = balance + ? WHERE name = ?", (balance_change, v['partner']))
-            
-            # 4. 전표 삭제
             cur.execute("DELETE FROM vouchers WHERE id = ?", (id,))
             con.commit()
         return jsonify({"message": "success"})
