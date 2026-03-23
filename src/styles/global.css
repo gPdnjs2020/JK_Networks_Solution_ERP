@@ -90,3 +90,112 @@ td {
 tr:hover {
   background-color: #f1f5f9;
 }
+
+/* 사이드바 기본 스타일 */
+.sidebar-container {
+  width: 220px;
+  background: var(--sidebar);
+  min-height: 100vh;
+  padding: 20px;
+  position: sticky;
+  top: 0;
+  transition: transform 0.3s ease;
+  z-index: 1000;
+}
+
+/* 모바일 전용 UI 숨김 */
+.mobile-top-bar, .mobile-close-btn, .sidebar-overlay {
+  display: none;
+}
+
+/* --- 모바일 반응형 (768px 이하) --- */
+@media (max-width: 768px) {
+  .mobile-top-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: 60px;
+    background: var(--sidebar);
+    color: white;
+    padding: 0 20px;
+    z-index: 999;
+  }
+
+  .hamburger-btn {
+    background: none; border: none; color: white; font-size: 24px; cursor: pointer;
+  }
+
+  .sidebar-container {
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    transform: translateX(-100%); /* 왼쪽으로 숨김 */
+    width: 240px;
+  }
+
+  .sidebar-container.open {
+    transform: translateX(0); /* 열림 상태 */
+  }
+
+  .mobile-close-btn {
+    display: block; background: none; border: none; color: #9ca3af; font-size: 20px; cursor: pointer;
+  }
+
+  .sidebar-overlay {
+    display: block; position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0, 0, 0, 0.5); z-index: 998;
+  }
+
+  main {
+    padding: 80px 20px 20px 20px !important; /* 모바일 헤더 높이만큼 여백 */
+  }
+
+  body {
+    font-size: 14px; /* 전체적으로 살짝 줄임 */
+    line-height: 1.5;
+  }
+
+  /* 2. 대시보드 카드 및 제목 크기 조절 */
+  h1 { font-size: 1.5rem; }
+  h2 { font-size: 1.2rem; }
+  .card {
+    padding: 16px; /* 모바일에서는 여백을 줄여 공간 확보 */
+    margin-bottom: 16px;
+  }
+
+  /* 3. [핵심] 테이블(표) 깨짐 방지 */
+  /* 데이터가 많으면 표가 뭉개지므로, 가로 스크롤이 생기게 감싸줍니다. */
+  .table-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch; /* 부드러운 스크롤 */
+  }
+
+  table {
+    min-width: 600px; /* 표가 너무 좁아지지 않게 최소 폭 고정 */
+    font-size: 13px; /* 표 안의 글씨는 더 작게 */
+  }
+
+  th, td {
+    padding: 10px 8px;
+    white-space: nowrap; /* 글자가 밑으로 마음대로 떨어지지 않게 */
+  }
+
+  /* 4. 입력창(Input Group) 세로 정렬 */
+  /* 가로로 나열되던 입력창들을 모바일에서는 한 줄씩 나오게 합니다. */
+  .input-group {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  input, select, .btn {
+    width: 100%; /* 모바일에서는 버튼과 입력창이 꽉 차게 */
+    box-sizing: border-box;
+  }
+
+  /* 5. 메인 콘텐츠 여백 최적화 */
+  main {
+    padding: 80px 15px 20px 15px !important;
+  }
+}

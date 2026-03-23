@@ -63,38 +63,40 @@ export default function Products() {
       </div>
 
       <div className="card">
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>상품명</th>
-              <th>현재 재고 (조절)</th>
-              <th>판매 단가</th>
-              <th>관리</th>
-            </tr>
-          </thead>
-          <tbody>
-            {products.map((p, index) => (
-              <tr key={p.id}>
-                <td>{index + 1}</td>
-                <td><strong>{p.name}</strong></td>
-                <td>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
-                    <button className="btn" style={smallBtn} onClick={() => changeStock(p.id, p.stock, -1)}>-</button>
-                    <span style={{ color: p.stock < 5 ? 'red' : 'inherit', minWidth: '40px', fontWeight: 'bold' }}>
-                      {p.stock} 개
-                    </span>
-                    <button className="btn" style={smallBtn} onClick={() => changeStock(p.id, p.stock, 1)}>+</button>
-                  </div>
-                </td>
-                <td>{p.price.toLocaleString()} 원</td>
-                <td>
-                  <button className="btn" style={delBtn} onClick={() => deleteProduct(p.id)}>삭제</button>
-                </td>
+        <div className="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>상품명</th>
+                <th>현재 재고 (조절)</th>
+                <th>판매 단가</th>
+                <th>관리</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {products.map((p, index) => (
+                <tr key={p.id}>
+                  <td>{index + 1}</td>
+                  <td><strong>{p.name}</strong></td>
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
+                      <button className="btn" style={smallBtn} onClick={() => changeStock(p.id, p.stock, -1)}>-</button>
+                      <span style={{ color: p.stock < 5 ? 'red' : 'inherit', minWidth: '40px', fontWeight: 'bold' }}>
+                        {p.stock} 개
+                      </span>
+                      <button className="btn" style={smallBtn} onClick={() => changeStock(p.id, p.stock, 1)}>+</button>
+                    </div>
+                  </td>
+                  <td>{p.price.toLocaleString()} 원</td>
+                  <td>
+                    <button className="btn" style={delBtn} onClick={() => deleteProduct(p.id)}>삭제</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
