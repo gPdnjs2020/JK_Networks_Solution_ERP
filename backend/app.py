@@ -28,28 +28,28 @@ def init_db():
     with get_db() as con:
         cur = con.cursor()
         
-        # ⚠️ [위험] 기존 테이블 강제 삭제 (데이터 초기화)
-        # cur.execute("DROP TABLE IF EXISTS vouchers")
-        # cur.execute("DROP TABLE IF EXISTS products")
-        # cur.execute("DROP TABLE IF EXISTS partners")
-        # cur.execute("DROP TABLE IF EXISTS accounts")
-        # cur.execute("DROP TABLE IF EXISTS users")
-
-        # 1. 유저 테이블
-        cur.execute("CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT, name TEXT)")
+        # 1. 유저 테이블 (IF NOT EXISTS 추가)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, 
+                username TEXT UNIQUE, 
+                password TEXT, 
+                name TEXT
+            )
+        """)
         
-        # 2. 상품 테이블 (원가, 규격 등 확장 대비)
-        cur.execute("CREATE TABLE products (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, price INTEGER, stock INTEGER DEFAULT 0)")
+        # 2. 상품 테이블
+        cur.execute("CREATE TABLE IF NOT EXISTS products (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, price INTEGER, stock INTEGER DEFAULT 0)")
         
         # 3. 거래처 테이블
-        cur.execute("CREATE TABLE partners (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, balance INTEGER DEFAULT 0)")
+        cur.execute("CREATE TABLE IF NOT EXISTS partners (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, balance INTEGER DEFAULT 0)")
         
-        # 4. 계정과목 테이블 (손익계산서용)
-        cur.execute("CREATE TABLE accounts (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, type TEXT)")
+        # 4. 계정과목 테이블
+        cur.execute("CREATE TABLE IF NOT EXISTS accounts (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, type TEXT)")
         
-        # 5. 전표 테이블 (기획안의 모든 기능 수용 버전)
+        # 5. 전표 테이블 (v_num, v_type 등 필수 컬럼 포함)
         cur.execute("""
-            CREATE TABLE vouchers (
+            CREATE TABLE IF NOT EXISTS vouchers (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 v_num TEXT UNIQUE,
                 v_type TEXT,
@@ -65,12 +65,22 @@ def init_db():
             )
         """)
         
-        # 초기 계정과목 자동 삽입
-        accounts = [('매출', '수익'), ('상품매입', '비용'), ('임차료', '비용'), ('급여', '비용')]
-        cur.executemany("INSERT INTO accounts (name, type) VALUES (?, ?)", accounts)
+        # [중요] 기존 DB에 v_num 컬럼이 없는 경우를 대비해 자동 추가 (에러 방지)
+        try:
+            cur.execute("ALTER TABLE vouchers ADD COLUMN v_num TEXT")
+        except: pass
+        try:
+            cur.execute("ALTER TABLE vouchers ADD COLUMN v_type TEXT")
+        except: pass
+
+        # 초기 계정과목 삽입 (없을 때만)
+        cur.execute("SELECT count(*) as cnt FROM accounts")
+        if cur.fetchone()['cnt'] == 0:
+            accounts = [('매출', '수익'), ('상품매입', '비용'), ('임차료', '비용'), ('급여', '비용')]
+            cur.executemany("INSERT INTO accounts (name, type) VALUES (?, ?)", accounts)
 
         con.commit()
-    print("✅ 모든 데이터가 초기화되었습니다. 새 출발 준비 완료!")
+    print("✅ 데이터베이스 준비 완료!")
 
 # --- 전표번호 자동 생성 함수 (예: V20240522-001) ---
 def generate_v_num(v_type_prefix):
