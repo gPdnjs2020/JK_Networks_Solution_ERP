@@ -21,15 +21,15 @@ export default function Vouchers() {
     load();
   }, []);
 
-  // --- 추가된 전표 삭제 함수 ---
+  // --- 전표 삭제 함수 (복구 로직 포함 안내) ---
   const deleteVoucher = async (id) => {
-    if (!window.confirm("이 전표를 삭제하시겠습니까? (재고나 잔액은 자동으로 복구되지 않으니 주의하세요)")) return;
+    if (!window.confirm("이 전표를 삭제하시겠습니까? 삭제 시 해당 상품의 재고와 거래처 잔액이 자동으로 복구됩니다.")) return;
 
     try {
       await axios.delete(`${API}/vouchers/${id}`);
       load(); // 삭제 후 목록 갱신
     } catch (e) {
-      alert("전표 삭제에 실패했습니다.");
+      alert("전표 삭제에 실패했습니다. (원인: " + e.message + ")");
     }
   };
 
@@ -39,40 +39,54 @@ export default function Vouchers() {
 
       <div className="card" style={{ padding: '0', overflowX: 'auto' }}>
         <div className="table-container">
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '800px' }}>
             <thead style={{ background: '#f8fafc' }}>
               <tr>
                 <th style={thStyle}>거래일자</th>
+                <th style={thStyle}>구분</th> {/* 구분 컬럼 추가 */}
                 <th style={thStyle}>거래처</th>
                 <th style={thStyle}>품목</th>
-                <th style={thStyle}>수량</th>
+                <th style={{ ...thStyle, textAlign: 'center' }}>수량</th>
                 <th style={{ ...thStyle, textAlign: 'right' }}>공급가액</th>
                 <th style={{ ...thStyle, textAlign: 'right' }}>부가세</th>
                 <th style={{ ...thStyle, textAlign: 'right' }}>합계금액</th>
-                <th style={thStyle}>관리</th> {/* 삭제 버튼을 위한 컬럼 */}
+                <th style={{ ...thStyle, textAlign: 'center' }}>관리</th>
               </tr>
             </thead>
             <tbody>
               {vouchers.length === 0 ? (
                 <tr>
-                  <td colSpan="8" style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>
+                  <td colSpan="9" style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>
                     거래 내역이 없습니다.
                   </td>
                 </tr>
               ) : (
                 vouchers.map((v) => (
-                  <tr key={v.id} style={trStyle}>
+                  <tr key={v.id} className="table-row" style={trStyle}>
                     <td style={tdStyle}>{v.date}</td>
+                    <td style={tdStyle}>
+                      {/* 매입/매출 태그 스타일 */}
+                      <span style={{
+                        padding: '4px 8px',
+                        borderRadius: '4px',
+                        fontSize: '12px',
+                        fontWeight: 'bold',
+                        backgroundColor: v.type === 'OUT' ? '#fff1f2' : '#eff6ff',
+                        color: v.type === 'OUT' ? '#e11d48' : '#2563eb'
+                      }}>
+                        {v.type === 'OUT' ? '매출' : '매입'}
+                      </span>
+                    </td>
                     <td style={tdStyle}><strong>{v.partner}</strong></td>
                     <td style={tdStyle}>{v.product}</td>
-                    <td style={tdStyle}>{Number(v.qty || 0).toLocaleString()}</td>
+                    <td style={{ ...tdStyle, textAlign: 'center' }}>{Number(v.qty || 0).toLocaleString()}</td>
                     <td style={{ ...tdStyle, textAlign: 'right' }}>
                       {Number(v.supply || 0).toLocaleString()}원
                     </td>
                     <td style={{ ...tdStyle, textAlign: 'right' }}>
                       {Number(v.vat || 0).toLocaleString()}원
                     </td>
-                    <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 'bold', color: '#2563eb' }}>
+                    <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 'bold', color: v.type === 'OUT' ? '#e11d48' : '#2563eb' }}>
                       {Number(v.total || 0).toLocaleString()}원
                     </td>
                     <td style={{ ...tdStyle, textAlign: 'center' }}>
@@ -96,17 +110,20 @@ export default function Vouchers() {
 
 // --- 인라인 스타일 ---
 const thStyle = {
-  padding: '12px 15px',
-  fontSize: '14px',
+  padding: '15px',
+  fontSize: '13px',
+  fontWeight: '600',
   color: '#475569',
-  borderBottom: '1px solid #e2e8f0',
-  textAlign: 'left'
+  borderBottom: '2px solid #e2e8f0',
+  textAlign: 'left',
+  whiteSpace: 'nowrap'
 };
 
 const tdStyle = {
   padding: '12px 15px',
-  fontSize: '15px',
-  borderBottom: '1px solid #f1f5f9'
+  fontSize: '14px',
+  borderBottom: '1px solid #f1f5f9',
+  color: '#334155'
 };
 
 const trStyle = {
@@ -114,11 +131,12 @@ const trStyle = {
 };
 
 const delBtnStyle = {
-  padding: '4px 8px',
+  padding: '5px 10px',
   fontSize: '12px',
-  backgroundColor: '#fff1f1',
+  backgroundColor: '#fff',
   color: '#dc2626',
   border: '1px solid #fecaca',
-  borderRadius: '4px',
-  cursor: 'pointer'
+  borderRadius: '6px',
+  cursor: 'pointer',
+  transition: 'all 0.2s'
 };

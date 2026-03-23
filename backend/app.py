@@ -149,28 +149,32 @@ def transaction():
             p_id = int(data["product_id"])
             pa_id = int(data["partner_id"])
             qty = int(data["qty"])
-            t_type = data["type"]
+            t_type = data["type"] # "IN"(매입) 또는 "OUT"(매출)
 
-            product = cur.execute("SELECT name, price, stock FROM products WHERE id=?", (p_id,)).fetchone()
-            partner = cur.execute("SELECT name, balance FROM partners WHERE id=?", (pa_id,)).fetchone()
+            product = cur.execute("SELECT name, price, stock FROM products WHERE id=%s", (p_id,)).fetchone()
+            partner = cur.execute("SELECT name, balance FROM partners WHERE id=%s", (pa_id,)).fetchone()
             
-            if not product or not partner:
-                return jsonify({"error": "정보 없음"}), 400
+            # [수정된 계산 로직]
+            # 보통 단가(price)를 공급가라고 가정할 때:
+            supply = product['price'] * qty
+            vat = int(supply * 0.1)  # 부가세 10%
+            total = supply + vat     # 총 합계 금액
 
-            total = product['price'] * qty
-            supply = int(total / 1.1)
-            vat = total - supply
-            
-            # 매출(OUT)이면 재고 감소/잔액 증가, 매입(IN)이면 재고 증가/잔액 감소
+            # 재고 및 미수금(잔액) 업데이트
+            # 매출(OUT)일 때: 재고 감소(-), 거래처 잔액 증가(+) -> 나중에 받을 돈
+            # 매입(IN)일 때: 재고 증가(+), 거래처 잔액 감소(-) -> 나중에 줄 돈
             new_stock = product['stock'] + (qty if t_type == "IN" else -qty)
             new_balance = partner['balance'] + (total if t_type == "OUT" else -total)
 
-            cur.execute("UPDATE products SET stock=? WHERE id=?", (new_stock, p_id))
-            cur.execute("UPDATE partners SET balance=? WHERE id=?", (new_balance, pa_id))
+            cur.execute("UPDATE products SET stock=%s WHERE id=%s", (new_stock, p_id))
+            cur.execute("UPDATE partners SET balance=%s WHERE id=%s", (new_balance, pa_id))
+            
+            # 전표 테이블에 'type' 저장 확인
             cur.execute("""
                 INSERT INTO vouchers(partner, product, qty, supply, vat, total, date, type)
-                VALUES (?, ?, ?, ?, ?, ?, date('now'), ?)
+                VALUES (%s, %s, %s, %s, %s, %s, TO_CHAR(NOW(), 'YYYY-MM-DD'), %s)
             """, (partner['name'], product['name'], qty, supply, vat, total, t_type))
+            
             con.commit()
         return jsonify({"message": "success"})
     except Exception as e:
