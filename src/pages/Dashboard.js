@@ -24,35 +24,32 @@ export default function Dashboard() {
         axios.get(`${API}/products`),
         axios.get(`${API}/partners`)
       ]);
-
+  
       const vouchers = vRes.data;
       const products = pRes.data;
-      const partners = paRes.data;
-
-      // 1. 손익 및 매출/매입 계산
+  
       let sales = 0;
       let purchase = 0;
+  
       vouchers.forEach(v => {
-        if (v.v_type === '판매' || v.type === 'OUT') sales += Number(v.supply || 0);
-        else if (v.v_type === '구매' || v.type === 'IN') purchase += Number(v.supply || 0);
+        // 판매(OUT)와 구매(IN)를 확실히 구분해서 합산
+        if (v.v_type === '판매' || v.type === 'OUT') {
+          sales += Number(v.supply || 0);
+        } else if (v.v_type === '구매' || v.type === 'IN') {
+          purchase += Number(v.supply || 0);
+        }
       });
-
-      // 2. 미수금 및 재고자산 계산
-      const balanceSum = partners.reduce((acc, p) => acc + Number(p.balance || 0), 0);
+  
       const stockSum = products.reduce((acc, p) => acc + (Number(p.price || 0) * Number(p.stock || 0)), 0);
-      
-      // 3. 재고 부족 알림 (5개 미만)
-      const lowStock = products.filter(p => p.stock < 5);
-
+  
       setStats({
         totalSales: sales,
         totalPurchase: purchase,
         totalProfit: sales - purchase,
-        totalBalance: balanceSum,
         inventoryValue: stockSum,
-        lowStockItems: lowStock
+        lowStockItems: products.filter(p => p.stock < 5)
       });
-
+      
       // 4. 월별 추이 데이터 가공
       const months = [...new Set(vouchers.map(v => v.date.substring(0, 7)))].sort();
       const salesData = months.map(m => 

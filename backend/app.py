@@ -29,11 +29,11 @@ def init_db():
         cur = con.cursor()
         
         # ⚠️ [위험] 기존 테이블 강제 삭제 (데이터 초기화)
-        cur.execute("DROP TABLE IF EXISTS vouchers")
-        cur.execute("DROP TABLE IF EXISTS products")
-        cur.execute("DROP TABLE IF EXISTS partners")
-        cur.execute("DROP TABLE IF EXISTS accounts")
-        cur.execute("DROP TABLE IF EXISTS users")
+        # cur.execute("DROP TABLE IF EXISTS vouchers")
+        # cur.execute("DROP TABLE IF EXISTS products")
+        # cur.execute("DROP TABLE IF EXISTS partners")
+        # cur.execute("DROP TABLE IF EXISTS accounts")
+        # cur.execute("DROP TABLE IF EXISTS users")
 
         # 1. 유저 테이블
         cur.execute("CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT, name TEXT)")
@@ -141,41 +141,52 @@ def transaction():
     try:
         with get_db() as con:
             cur = con.cursor()
-            p_id = data.get("product_id")
-            pa_id = data.get("partner_id")
-            qty = int(data.get("qty", 0))
-            t_type = data["type"] # '판매'(매출), '구매'(매입), '견적', '발주'
+            p_id = int(data["product_id"])
+            pa_id = int(data["partner_id"])
+            qty = int(data["qty"])
+            # 프론트에서 넘어오는 구분을 '판매'/'구매' 또는 'OUT'/'IN' 모두 수용
+            raw_type = data["type"] 
+            t_type = "판매" if raw_type in ["OUT", "판매"] else "구매"
+
+            product = cur.execute("SELECT name, price, stock FROM products WHERE id=?", (p_id,)).fetchone()
+            partner = cur.execute("SELECT name, balance FROM partners WHERE id=?", (pa_id,)).fetchone()
             
-            # 1. 정보 가져오기
-            product = cur.execute("SELECT * FROM products WHERE id=?", (p_id,)).fetchone()
-            partner = cur.execute("SELECT * FROM partners WHERE id=?", (pa_id,)).fetchone()
-            
-            # 2. 금액 계산
+            if not product or not partner:
+                return jsonify({"error": "상품 또는 거래처 정보가 없습니다."}), 400
+
             supply = product['price'] * qty
             vat = int(supply * 0.1)
             total = supply + vat
-            
-            # 3. 전표번호 생성
-            v_prefix = "S" if t_type == "판매" else "P" if t_type == "구매" else "Q"
-            v_num = generate_v_num(v_prefix)
+            v_num = generate_v_num("S" if t_type == "판매" else "P")
 
-            # 4. 재고 및 잔액 업데이트 (견적/발주는 실제 재고에 영향 없음)
+            # [핵심] 재고 및 잔액 실시간 업데이트
             if t_type == "판매":
                 cur.execute("UPDATE products SET stock = stock - ? WHERE id = ?", (qty, p_id))
                 cur.execute("UPDATE partners SET balance = balance + ? WHERE id = ?", (total, pa_id))
-            elif t_type == "구매":
+            else: # 구매(입고)
                 cur.execute("UPDATE products SET stock = stock + ? WHERE id = ?", (qty, p_id))
                 cur.execute("UPDATE partners SET balance = balance - ? WHERE id = ?", (total, pa_id))
 
-            # 5. 자동 전표 기록
+            # [핵심] 전표 저장 (Dashboard와 Vouchers가 이 데이터를 읽음)
             cur.execute("""
-                INSERT INTO vouchers(v_num, v_type, partner, product, qty, supply, vat, total, date, account_name)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, date('now'), ?)
-            """, (v_num, t_type, partner['name'], product['name'], qty, supply, vat, total, 
-                  '매출' if t_type == "판매" else '상품매입'))
+                INSERT INTO vouchers(v_num, v_type, type, partner, product, qty, supply, vat, total, date)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, date('now'))
+            """, (v_num, t_type, "OUT" if t_type == "판매" else "IN", partner['name'], product['name'], qty, supply, vat, total))
             
             con.commit()
         return jsonify({"message": "success", "v_num": v_num})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# 수량 직접 수정 시에도 반영되도록 patch_product 수정
+@app.route("/products/<int:id>/stock", methods=["PATCH"])
+def update_stock(id):
+    data = request.json
+    try:
+        with get_db() as con:
+            con.execute("UPDATE products SET stock = ? WHERE id = ?", (data.get("stock"), id))
+            con.commit()
+        return jsonify({"message": "success"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
