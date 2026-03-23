@@ -199,21 +199,38 @@ def delete_voucher(id):
     try:
         with get_db() as con:
             cur = con.cursor()
+            # 1. 삭제할 전표 정보 가져오기
             v = cur.execute("SELECT * FROM vouchers WHERE id=?", (id,)).fetchone()
-            if not v: return jsonify({"error": "Not Found"}), 404
+            if not v: 
+                return jsonify({"error": "전표를 찾을 수 없습니다."}), 404
             
-            # 복구 로직 (판매 삭제 시 재고+, 잔액-) / (구매 삭제 시 재고-, 잔액+)
-            if v['v_type'] == "판매":
-                cur.execute("UPDATE products SET stock = stock + ? WHERE name = ?", (v['qty'], v['product']))
-                cur.execute("UPDATE partners SET balance = balance - ? WHERE name = ?", (v['total'], v['partner']))
-            elif v['v_type'] == "구매":
-                cur.execute("UPDATE products SET stock = stock - ? WHERE name = ?", (v['qty'], v['product']))
-                cur.execute("UPDATE partners SET balance = balance + ? WHERE name = ?", (v['total'], v['partner']))
+            # 2. 전표 타입 판별 (비어있을 경우를 대비한 방어 로직)
+            # 기존 데이터(type)와 새 데이터(v_type) 모두 체크합니다.
+            v_type = v['v_type'] or v['type'] or ""
+            qty = v['qty'] or 0
+            total = v['total'] or 0
+            product_name = v['product']
+            partner_name = v['partner']
+
+            # 3. 복구 로직 실행
+            # 판매/매출일 때: 재고는 다시 채우고(+), 외상값은 뺍니다(-)
+            if v_type in ["판매", "OUT"]:
+                cur.execute("UPDATE products SET stock = stock + ? WHERE name = ?", (qty, product_name))
+                cur.execute("UPDATE partners SET balance = balance - ? WHERE name = ?", (total, partner_name))
             
+            # 구매/매입일 때: 재고는 다시 빼고(-), 줄 돈은 다시 채웁니다(+)
+            elif v_type in ["구매", "IN"]:
+                cur.execute("UPDATE products SET stock = stock - ? WHERE name = ?", (qty, product_name))
+                cur.execute("UPDATE partners SET balance = balance + ? WHERE name = ?", (total, partner_name))
+            
+            # 4. 전표 삭제
             cur.execute("DELETE FROM vouchers WHERE id = ?", (id,))
             con.commit()
+            
         return jsonify({"message": "success"})
     except Exception as e:
+        # 에러 내용을 로그로 출력해서 원인 파악을 돕습니다.
+        print(f"삭제 에러 발생: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
